@@ -53,7 +53,14 @@ huggingface-cli download deepseek-ai/DeepSeek-V4-Flash \
 
 > The actual file loaded on our Spark is an **IQ2XXS-w2Q2K/AProjQ8/SExpQ8/OutQ8 GGUF** weighing **81 GB** — this is the trick that makes a 640B model fit in 128 GB RAM.
 
-**Optional:** For Multi-Token Prediction (MTP), download the draft model separately (see the ds4 README).
+**Optional:** For Multi-Token Prediction (MTP), download the draft model separately:
+
+```bash
+cd ~/ds4
+DS4_GGUF_DIR=/srv/models/deepseek-v4-flash ./download_model.sh mtp
+```
+
+This fetches `DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf` (~3.8 GB).
 
 ---
 
@@ -100,8 +107,9 @@ Alternatively, pass the path at startup with `--model` (see step 5).
 ```bash
 ./ds4-server \
   --model /srv/models/deepseek-v4-flash/ds4flash.gguf \
-  --mtp-draft /srv/models/deepseek-v4-flash/deepseek-v4-flash-mtp-draft.gguf \
-  --mtp-layers 1 \
+  --mtp /srv/models/deepseek-v4-flash/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf \
+  --mtp-draft 2 \
+  --mtp-margin 3 \
   --host 127.0.0.1 \
   --port 8004
 ```
@@ -112,8 +120,9 @@ Alternatively, pass the path at startup with `--model` (see step 5).
 | `--ctx` | Context length in tokens (up to 131072) |
 | `--kv-disk-dir` | Directory for disk-based KV cache |
 | `--kv-disk-space-mb` | Max disk cache size in MB |
-| `--mtp-draft` | Path to MTP draft model |
-| `--mtp-layers` | Number of MTP layers (start at 1) |
+| `--mtp` | Path to the MTP draft model GGUF |
+| `--mtp-draft` | Maximum autoregressive MTP draft tokens (start at 2) |
+| `--mtp-margin` | Verifier confidence margin for fast MTP acceptance (default: 3) |
 
 ---
 
@@ -222,7 +231,7 @@ journalctl --user -u ds4-server -f --no-pager
 **If tokens/s are low:**
 1. Check for thermal throttling — the GB10 downclocks under sustained load
 2. Reduce context length (try 32k/64k first)
-3. Adjust MTP layers
+3. Adjust MTP draft tokens / margin
 
 ---
 
