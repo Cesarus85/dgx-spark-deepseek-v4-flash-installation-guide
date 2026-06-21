@@ -62,6 +62,8 @@ DS4_GGUF_DIR=/srv/models/deepseek-v4-flash ./download_model.sh mtp
 
 This fetches `DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf` (~3.8 GB).
 
+> **Note:** MTP/speculative decoding is workload- and hardware-sensitive. On one DGX Spark test setup, `--mtp-draft 2 --mtp-margin 3` increased end-to-end latency rather than improving it. Treat MTP as an experiment: benchmark it against the plain server before leaving it enabled.
+
 ---
 
 ## 4. Set the Symlink (Default Path)
@@ -103,6 +105,8 @@ Alternatively, pass the path at startup with `--model` (see step 5).
 ```
 
 **With MTP Draft (optional, higher throughput):**
+
+Only keep this enabled if your own benchmark improves. If latency gets worse, remove the `--mtp`, `--mtp-draft`, and `--mtp-margin` flags again.
 
 ```bash
 ./ds4-server \
