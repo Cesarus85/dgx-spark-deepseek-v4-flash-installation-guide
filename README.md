@@ -1,78 +1,78 @@
-# DGX Spark: DeepSeek V4 Flash mit DwarfStar ds4 installieren
+# DGX Spark: Install DeepSeek V4 Flash with DwarfStar ds4
 
-Eine Schritt-für-Schritt-Anleitung, um **DeepSeek V4 Flash** (640B Parameter) auf einem einzelnen **NVIDIA DGX Spark (GB10)** mit der **DwarfStar/ds4** Custom-CUDA-Engine zum Laufen zu bringen.
+A step-by-step guide to running **DeepSeek V4 Flash** (640B parameters) on a single **NVIDIA DGX Spark (GB10)** using the **DwarfStar/ds4** custom CUDA inference engine.
 
-> **Voraussetzung:** Ein DGX Spark mit 128 GB LPDDR5X Unified Memory und installiertem NVIDIA CUDA Toolkit / Driver.
+> **Prerequisites:** A DGX Spark with 128 GB LPDDR5X Unified Memory and an installed NVIDIA CUDA Toolkit / Driver.
 
 ---
 
-## 1. Hardware-Check
+## 1. Hardware Check
 
 ```bash
-# GPU-Typ und CUDA-Fähigkeit prüfen
+# Check GPU type and CUDA capability
 nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv
 
-# Erwartet: NVIDIA GB10, compute_cap 12.1, 128 GB
-# Driver-Version: ≥ 580.159.03
+# Expected: NVIDIA GB10, compute_cap 12.1, 128 GB
+# Driver version: ≥ 580.159.03
 ```
 
 ---
 
-## 2. Repository klonen und bauen
+## 2. Clone and Build
 
 ```bash
 git clone https://github.com/antirez/ds4.git
 cd ds4
 
-# Nativ für GB10 kompilieren (~8 Sekunden)
+# Compile natively for GB10 (~8 seconds)
 make cuda-spark
 ```
 
-Nach dem Build liegen drei Binaries im Arbeitsverzeichnis:
+After the build, three binaries are in the working directory:
 
-| Binary | Zweck |
-|--------|-------|
-| `ds4` | CLI-Tool für Prompt-Processing |
-| `ds4-server` | OpenAI-kompatibler API-Server |
-| `ds4-bench` | Benchmark-Tool |
+| Binary | Purpose |
+|--------|---------|
+| `ds4` | CLI tool for prompt processing |
+| `ds4-server` | OpenAI-compatible API server |
+| `ds4-bench` | Benchmark tool |
 
 ---
 
-## 3. Modell herunterladen
+## 3. Download the Model
 
-Das Modell ist **nicht im Repository**. Du brauchst die quantisierte GGUF-Datei von Hugging Face:
+The model is **not included in the repository**. You need the quantized GGUF file from Hugging Face:
 
 ```bash
-# Hugging Face CLI installieren falls nicht vorhanden
+# Install Hugging Face CLI if not already available
 pip install huggingface-hub
 
-# Modell herunterladen
+# Download the model
 huggingface-cli download deepseek-ai/DeepSeek-V4-Flash \
   --local-dir /srv/models/deepseek-v4-flash
 ```
 
-> Die konkrete Datei auf dem Spark ist eine **IQ2XXS-w2Q2K/AProjQ8/SExpQ8/OutQ8 GGUF** mit **81 GB** — das ist der Trick, warum ein 640B-Modell in 128 GB RAM passt.
+> The actual file loaded on our Spark is an **IQ2XXS-w2Q2K/AProjQ8/SExpQ8/OutQ8 GGUF** weighing **81 GB** — this is the trick that makes a 640B model fit in 128 GB RAM.
 
-**Optional:** Für Multi-Token Prediction (MTP) das Draft-Modell separat beziehen (siehe ds4-README).
+**Optional:** For Multi-Token Prediction (MTP), download the draft model separately (see the ds4 README).
 
 ---
 
-## 4. Symlink für Default-Pfad setzen
+## 4. Set the Symlink (Default Path)
 
-Die Binaries erwarten standardmäßig `./ds4flash.gguf` im Arbeitsverzeichnis:
+The binaries expect `./ds4flash.gguf` in the working directory by default:
 
 ```bash
 cd ~/ds4
 ln -s /srv/models/deepseek-v4-flash/ds4flash.gguf ./ds4flash.gguf
 ```
 
-Alternativ den Pfad beim Start mit `--model` übergeben (siehe Schritt 5).
+Alternatively, pass the path at startup with `--model` (see step 5).
 
 ---
 
-## 5. Server starten
+## 5. Start the Server
 
-**Einfacher Start:**
+**Simple start:**
 
 ```bash
 ./ds4-server \
@@ -81,7 +81,7 @@ Alternativ den Pfad beim Start mit `--model` übergeben (siehe Schritt 5).
   --port 8004
 ```
 
-**Mit KV-Disk-Cache und größerem Kontext:**
+**With KV disk cache and larger context:**
 
 ```bash
 ./ds4-server \
@@ -95,7 +95,7 @@ Alternativ den Pfad beim Start mit `--model` übergeben (siehe Schritt 5).
   --kv-cache-continued-interval-tokens 20000
 ```
 
-**Mit MTP Draft (optional, höherer Durchsatz):**
+**With MTP Draft (optional, higher throughput):**
 
 ```bash
 ./ds4-server \
@@ -106,24 +106,24 @@ Alternativ den Pfad beim Start mit `--model` übergeben (siehe Schritt 5).
   --port 8004
 ```
 
-| Flag | Bedeutung |
-|------|-----------|
-| `--port` | API-Port (Default: 8004) |
-| `--ctx` | Kontextlänge in Tokens (bis 131072) |
-| `--kv-disk-dir` | Verzeichnis für disk-basierten KV-Cache |
-| `--kv-disk-space-mb` | Maximaler Disk-Cache in MB |
-| `--mtp-draft` | Pfad zum MTP Draft-Modell |
-| `--mtp-layers` | Anzahl MTP Layers (Startwert: 1) |
+| Flag | Description |
+|------|-------------|
+| `--port` | API port (default: 8004) |
+| `--ctx` | Context length in tokens (up to 131072) |
+| `--kv-disk-dir` | Directory for disk-based KV cache |
+| `--kv-disk-space-mb` | Max disk cache size in MB |
+| `--mtp-draft` | Path to MTP draft model |
+| `--mtp-layers` | Number of MTP layers (start at 1) |
 
 ---
 
-## 6. Smoke-Test
+## 6. Smoke Test
 
 ```bash
-# Modell-Info abrufen
+# Fetch model info
 curl -sS http://localhost:8004/v1/models | python3 -m json.tool
 
-# Chat-Completion testen
+# Test a chat completion
 curl -sS http://localhost:8004/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
@@ -134,13 +134,13 @@ curl -sS http://localhost:8004/v1/chat/completions \
   }' | python3 -m json.tool
 ```
 
-Erwartung: Die Antwort sollte `323` enthalten.
+Expected: the answer should contain `323`.
 
 ---
 
-## 7. Systemd User Service (für Production)
+## 7. Systemd User Service (Production Setup)
 
-Damit der Server verwaltet und bei Bedarf gestartet werden kann:
+Create a systemd user service so the server can be managed and started on demand:
 
 ```bash
 cat > ~/.config/systemd/user/ds4-server.service << 'EOF'
@@ -161,9 +161,9 @@ WantedBy=default.target
 EOF
 ```
 
-> **⚠️ Wichtig:** In einem `systemd --user` Service darf **kein `User=`** gesetzt werden. Das führt zu `status=216/GROUP`.
+> **⚠️ Important:** In a `systemd --user` service, **do not set `User=`**. Doing so causes `status=216/GROUP`.
 
-Service aktivieren und testen:
+Enable and test the service:
 
 ```bash
 systemctl --user daemon-reload
@@ -172,13 +172,13 @@ systemctl --user status ds4-server
 journalctl --user -u ds4-server -f
 ```
 
-**Empfehlung:** Den Service nicht als Autostart (`enable`) setzen — DS4 belegt ~80 GB RAM. Besser on-demand über einen Router wie llama-swap starten.
+**Recommendation:** Do not enable the service as an autostart — DS4 occupies ~80 GB RAM. Start it on demand via a router like llama-swap instead.
 
 ---
 
-## 8. Integration mit llama-swap (optional)
+## 8. Integration with llama-swap (Optional)
 
-Falls du llama-swap als API-Router verwendest, kannst du DS4 als Route eintragen:
+If you use llama-swap as an API router, add DS4 as a route:
 
 ```yaml
 # In spark.yaml
@@ -193,12 +193,12 @@ deepseek-v4-flash:
     cmd: /srv/llama-swap/start-ds4-deepseek-v4-flash.sh
 ```
 
-Startscript für llama-swap (`/srv/llama-swap/start-ds4-deepseek-v4-flash.sh`):
+Startup script for llama-swap (`/srv/llama-swap/start-ds4-deepseek-v4-flash.sh`):
 
 ```bash
 #!/bin/bash
 systemctl --user start ds4-server
-# Auf Ready warten
+# Wait for readiness
 until curl -sS http://127.0.0.1:8004/v1/models >/dev/null 2>&1; do
   sleep 1
 done
@@ -207,37 +207,37 @@ journalctl --user -u ds4-server -f --no-pager
 
 ---
 
-## 9. Performance-Tuning
+## 9. Performance Tuning
 
-**GPU-Cache auslesen:**
+**Check GPU cache usage:**
 ```bash
 ./ds4 --model /srv/models/deepseek-v4-flash/ds4flash.gguf --prompt "test" --verbose 2>&1 | grep gpu_cache
 ```
 
-**Erwartete Performance:**
-- Steady-State Decode: ~95 % der GB10-Bandbreite (~273 GB/s)
-- MTP kann den Durchsatz zusätzlich steigern
-- 1M Token Sessions sind möglich (KV-Cache ~9,6 GB)
+**Expected performance:**
+- Steady-state decode: ~95 % of GB10 bandwidth (~273 GB/s)
+- MTP can further increase throughput
+- 1M token sessions are feasible (KV cache ~9.6 GB)
 
-**Bei niedrigen Tokens/s:**
-1. Thermal Throttling prüfen — GB10 drosselt unter Dauerlast
-2. Kontextlänge reduzieren (32k/64k testen)
-3. MTP Layers anpassen
-
----
-
-## 10. Wichtige Hinweise
-
-- **Kein generischer GGUF-Runner:** DwarfStar/ds4 läuft **nur** mit DeepSeek V4 Flash (und PRO auf sehr großen Maschinen). Andere Modelle liefern Unsinn oder starten nicht.
-- **Kein `/health`:** DS4 hat keinen Health-Endpoint. `checkEndpoint` muss `/v1/models` sein.
-- **Port-Kollision:** DS4 auf Port **8004** setzen (nicht 8000, den brauchen evtl. andere vLLM-Routen).
-- **Disk-Space:** Mindestens 120 GB frei für Modell + Cache einplanen. Die 4-TB-SSD im Spark reicht locker.
+**If tokens/s are low:**
+1. Check for thermal throttling — the GB10 downclocks under sustained load
+2. Reduce context length (try 32k/64k first)
+3. Adjust MTP layers
 
 ---
 
-## One-Command-Installer (Community)
+## 10. Important Notes
 
-Falls du den ganzen Prozess automatisieren willst — der Community-Installer von **Entrpi** übernimmt Clone, Build, Download und Start:
+- **Not a generic GGUF runner:** DwarfStar/ds4 works **only** with DeepSeek V4 Flash (and PRO on very large machines). Other models produce garbage or won't start.
+- **No `/health` endpoint:** DS4 does not provide a health endpoint. `checkEndpoint` must be `/v1/models`.
+- **Port collision:** Assign DS4 to port **8004** (not 8000, which may be needed by other vLLM routes).
+- **Disk space:** Plan for at least 120 GB free for model + cache. The Spark's 4 TB SSD has plenty of room.
+
+---
+
+## One-Command Community Installer
+
+If you want to automate the entire process, the **Entrpi** community installer handles clone, build, download, and startup:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Entrpi/ds4-on-spark/main/install.sh \
@@ -248,10 +248,10 @@ Repo: [github.com/Entrpi/ds4-on-spark](https://github.com/Entrpi/ds4-on-spark)
 
 ---
 
-## Quellen
+## Sources
 
 - [antirez/ds4 GitHub Repository](https://github.com/antirez/ds4)
 - [Dre Dyson: Beginner Guide](https://dredyson.com/how-i-got-fully-custom-cuda-native-deepseek-4-flash-running-on-nvidia-dgx-spark-a-complete-beginners-step-by-step-guide-to-installation-benchmarks-roofline-analysis-and-common-misconcep/)
 - [Dre Dyson: Advanced Guide](https://dredyson.com/how-i-mastered-fully-custom-cuda-native-deepseek-4-flash-dwarfstar-4-on-nvidia-dgx-spark-the-complete-advanced-configuration-guide-with-benchmarks-roofline-analysis-tensor-parallelism-a/)
-- [NVIDIA Forums: ds4 auf Spark](https://forums.developer.nvidia.com/t/fully-custom-cuda-native-deepseek-4-flash-optimized-for-1x-spark-antirez-ds4/369791)
+- [NVIDIA Forums: ds4 on Spark](https://forums.developer.nvidia.com/t/fully-custom-cuda-native-deepseek-4-flash-optimized-for-1x-spark-antirez-ds4/369791)
 - [Entrpi/ds4-on-spark Installer](https://github.com/Entrpi/ds4-on-spark)
